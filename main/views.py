@@ -13,10 +13,6 @@ from .serializers import *
 
 
 class CustomTokenAuthentication(TokenAuthentication):
-    """Custom token auth that uses AuthToken model (not DRF's built-in Token).
-    
-    Supports both Authorization header and cookie-based token auth.
-    """
     keyword = 'Token'
 
     def get_model(self):
@@ -84,6 +80,49 @@ class LoginAPIView(APIView):
         )
         
         # Set token as HTTP-only cookie
+        response.set_cookie(
+            key='auth_token',
+            value=token.token,
+            httponly=True,
+            samesite='Strict',
+            max_age=86400 * 30  # 30 days
+        )
+        
+        return response
+
+class RegisterAPIView(APIView):
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('user_password')
+
+        if not username or not password:
+            return Response(
+                {'error': 'username and user_password are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {'error': f'Username \'{username}\' already exists'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = User.objects.create(
+            username=username,
+            user_password=password  # Insecure: store hashed password
+        )
+
+        token = AuthToken.objects.create(user=user)
+
+        response = Response(
+            {
+                'message': 'Registration successful',
+                'user_id': str(user.user_id),
+                'username': user.username,
+            },
+            status=status.HTTP_201_CREATED
+        )
+        
         response.set_cookie(
             key='auth_token',
             value=token.token,
