@@ -76,7 +76,7 @@ class CartItemSerializer(serializers.ModelSerializer):
 
 class CartSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
-    cart_items = CartItemSerializer(many=True, source="cart_items", required=False)
+    cart_items = CartItemSerializer(many=True, required=False)
     total_price = serializers.SerializerMethodField()
 
     class Meta:
