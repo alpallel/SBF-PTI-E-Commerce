@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.urls import reverse
 import uuid
 
 
@@ -32,12 +33,12 @@ class Category(models.Model):
 
 
 class Items(models.Model):
-    item_id = models.AutoField(primary_key=True)
     item_name = models.CharField(max_length=200)
-    item_picture = models.ImageField(upload_to="items/%Y/%m/%d/", blank=True, null=True)
-    item_description = models.TextField(blank=True)
     item_category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="items")
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
+    item_picture = models.ImageField(upload_to="items/%Y/%m/%d/", blank=True, null=True)
+    slug = models.SlugField(unique=True)
+    item_description = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -49,7 +50,26 @@ class Items(models.Model):
 
     def __str__(self):
         return f"{self.item_name} ({self.price})"
+    
+    def get_add_to_cart(self):
+        return reverse('core:add_to_cart', kwargs={
+            'slug': self.slug
+        })
 
+    def remove_from_the_cart(self):
+        return reverse('core:remove_from_the_cart', kwargs={
+            'slug':self.slug
+        })
+
+
+class OrderItem(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    item = models.ForeignKey(Items, on_delete=models.CASCADE)
+    quantity = models.IntegerField(default=1)
+
+    def get_total_price(self):
+        return self.item.price * self.quantity
+    
 
 class Cart(models.Model):
     user = models.OneToOneField(to=User, on_delete=models.CASCADE, related_name="cart")
@@ -57,7 +77,12 @@ class Cart(models.Model):
 
     def __str__(self):
         return f"Cart of {self.user}"
-
+    
+    def get_total(self):
+        total = 0
+        for order_item in self.items.all():
+            total = total + order_item.get_final_price()
+        return total
 
 class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="cart_items")
