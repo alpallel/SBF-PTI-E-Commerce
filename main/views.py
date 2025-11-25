@@ -4,11 +4,112 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import TokenAuthentication
 from django.shortcuts import get_object_or_404
 from django.db.models import F
 
 from .models import *
 from .serializers import *
+
+
+class CustomTokenAuthentication(TokenAuthentication):
+    """Custom token auth that uses AuthToken model (not DRF's built-in Token).
+    
+    Supports both Authorization header and cookie-based token auth.
+    """
+    keyword = 'Token'
+
+    def get_model(self):
+        return AuthToken
+
+    def authenticate(self, request):
+        # First try Authorization header
+        auth = request.META.get('HTTP_AUTHORIZATION', '').split()
+        if auth and auth[0].lower() == self.keyword.lower() and len(auth) == 2:
+            try:
+                token_obj = AuthToken.objects.get(token=auth[1])
+                return (token_obj.user, token_obj)
+            except AuthToken.DoesNotExist:
+                return None
+        
+        # Fall back to cookie-based token
+        token_value = request.COOKIES.get('auth_token')
+        if token_value:
+            try:
+                token_obj = AuthToken.objects.get(token=token_value)
+                return (token_obj.user, token_obj)
+            except AuthToken.DoesNotExist:
+                return None
+        
+        return None
+
+
+class LoginAPIView(APIView):
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('user_password')
+
+        if not username or not password:
+            return Response(
+                {'error': 'username and user_password are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Invalid username or password'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # For production: use proper password hashing (Django auth or bcrypt)
+        # For now: simple plaintext comparison (NOT SECURE)
+        if user.user_password != password:
+            return Response(
+                {'error': 'Invalid username or password'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Create or get auth token
+        token, created = AuthToken.objects.get_or_create(user=user)
+
+        response = Response(
+            {
+                'message': 'Login successful',
+                'user_id': str(user.user_id),
+                'username': user.username,
+            },
+            status=status.HTTP_200_OK
+        )
+        
+        # Set token as HTTP-only cookie
+        response.set_cookie(
+            key='auth_token',
+            value=token.token,
+            httponly=True,
+            samesite='Strict',
+            max_age=86400 * 30  # 30 days
+        )
+        
+        return response
+
+
+class LogoutAPIView(APIView):
+    """Logout endpoint (stateless; no session cleanup needed)."""
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (CustomTokenAuthentication,)
+
+    def post(self, request):
+        response = Response(
+            {'message': 'Logout successful'},
+            status=status.HTTP_200_OK
+        )
+        
+        # Delete the authentication cookie
+        response.delete_cookie('auth_token')
+        
+        return response
 
 
 class AllItemsAPIView(APIView):
@@ -50,6 +151,7 @@ class ItemDetailAPIView(APIView):
 
 class CartAPIView(APIView):
     permission_classes = (IsAuthenticated,)
+    authentication_classes = (CustomTokenAuthentication,)
 
     def get(self, request):
         user = request.user
@@ -99,6 +201,5 @@ class CartAPIView(APIView):
         cart.cart_items.all().delete()
         serializer = CartSerializer(cart, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 

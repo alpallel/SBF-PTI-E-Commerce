@@ -5,6 +5,8 @@ from main.views import *
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('login/', LoginAPIView.as_view(), name='login'),
+    path('logout/', LogoutAPIView.as_view(), name='logout'),
     path('',
           AllItemsAPIView.as_view(), name='item_list'),
     path('item_list/',

@@ -2,7 +2,9 @@ from decimal import Decimal
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.urls import reverse
+from django.utils.text import slugify
 import uuid
+import secrets
 
 
 class User(models.Model):
@@ -19,6 +21,11 @@ class User(models.Model):
 
     def __str__(self):
         return self.username
+
+    @property
+    def is_authenticated(self):
+        """Required by DRF's IsAuthenticated permission class."""
+        return True
 
 
 class Category(models.Model):
@@ -37,7 +44,7 @@ class Items(models.Model):
     item_category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="items")
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
     item_picture = models.ImageField(upload_to="items/%Y/%m/%d/", blank=True, null=True)
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField(unique=True, blank=True)
     item_description = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -50,6 +57,17 @@ class Items(models.Model):
 
     def __str__(self):
         return f"{self.item_name} ({self.price})"
+    
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.item_name)
+            self.slug = base_slug
+            # Handle duplicate slugs by adding a counter
+            counter = 1
+            while Items.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
+                self.slug = f"{base_slug}-{counter}"
+                counter += 1
+        super().save(*args, **kwargs)
     
     def get_add_to_cart(self):
         return reverse('core:add_to_cart', kwargs={
@@ -94,3 +112,18 @@ class CartItem(models.Model):
 
     def __str__(self):
         return f"{self.quantity} × {self.item.item_name} in {self.cart}"
+
+
+class AuthToken(models.Model):
+    """Simple token auth for API (login returns token, client includes in Authorization header)."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="auth_token")
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(48)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Token for {self.user.username}"

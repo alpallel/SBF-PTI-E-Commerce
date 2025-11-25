@@ -34,7 +34,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ItemsSerializer(serializers.ModelSerializer):
-    item_id = serializers.IntegerField(read_only=True)
+    item_id = serializers.IntegerField(source='id', read_only=True)
     item_category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
 
     class Meta:
