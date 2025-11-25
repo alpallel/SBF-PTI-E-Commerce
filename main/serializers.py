@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from rest_framework import serializers
-from .models import User, Category, Items, Cart, CartItem
+from rest_framework.exceptions import ValidationError
+from .models import *
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -9,15 +12,19 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("user_id", "username", "user_password", "user_picture", "created_at")
-        read_only_fields = ("created_at", "updated_at")
+        read_only_fields = ("created_at",)
 
     def create(self, validated_data):
         return User.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
-        instance.user_id = validated_data.get("user_id", instance.user_id)
-        instance.user_password = validated_data.get("user_password", instance.user_password)
+        instance.username = validated_data.get("username", instance.username)
+        password = validated_data.get("user_password", None)
+        if password is not None:
+            instance.user_password = password
         instance.user_picture = validated_data.get("user_picture", instance.user_picture)
+        instance.save()
+        return instance
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -27,7 +34,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ItemsSerializer(serializers.ModelSerializer):
-    item_id = serializers.IntegerField(read_only=True)
+    item_id = serializers.IntegerField(source='id', read_only=True)
     item_category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
 
     class Meta:
@@ -47,12 +54,28 @@ class CartItemSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         return CartItem.objects.create(**validated_data)
-    
+    def validate_quantity(self, value):
+        if value is None:
+            return 1
+        try:
+            if int(value) < 1:
+                raise ValidationError("quantity must be >= 1")
+        except (TypeError, ValueError):
+            raise ValidationError("quantity must be an integer")
+        return int(value)
+
     def update(self, instance, validated_data):
-        instance.item = validated_data.get("item", instance.item)
+        item = validated_data.get("item")
+        if item is not None:
+            instance.item = item
+        qty = validated_data.get("quantity")
+        if qty is not None:
+            instance.quantity = int(qty)
+        instance.save()
+        return instance
 
 class CartSerializer(serializers.ModelSerializer):
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
     cart_items = CartItemSerializer(many=True, source="cart_items", required=False)
     total_price = serializers.SerializerMethodField()
 
@@ -62,7 +85,9 @@ class CartSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         cart_items_data = validated_data.pop("cart_items", [])
-        user = validated_data.pop("user")
+        user = validated_data.get("user") or self.context.get("request") and getattr(self.context.get("request"), "user", None)
+        if user is None or user.is_anonymous:
+            raise ValidationError("User must be set to create a cart")
         cart = Cart.objects.create(user=user)
         for ci in cart_items_data:
             item = ci.get("item")
@@ -80,16 +105,21 @@ class CartSerializer(serializers.ModelSerializer):
         existing_qs = instance.cart_items.select_related("item").all()
         existing_ids = {ci.item.id for ci in existing_qs}
 
-        # update or create
         for item_id, ci in incoming.items():
             obj, created = CartItem.objects.update_or_create(
                 cart=instance, item_id=item_id,
                 defaults={"quantity": ci.get("quantity", 1)}
             )
 
-        # remove items not present in incoming
         to_remove = [ci for ci in existing_qs if ci.item.id not in incoming]
         for ci in to_remove:
             ci.delete()
 
         return instance
+
+    def get_total_price(self, obj):
+        total = Decimal("0.00")
+        for ci in obj.cart_items.select_related("item").all():
+            price = ci.item.price or Decimal("0.00")
+            total += price * ci.quantity
+        return str(total)
