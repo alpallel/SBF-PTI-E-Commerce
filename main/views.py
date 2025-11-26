@@ -135,7 +135,6 @@ class RegisterAPIView(APIView):
 
 
 class LogoutAPIView(APIView):
-    """Logout endpoint (stateless; no session cleanup needed)."""
     permission_classes = (IsAuthenticated,)
     authentication_classes = (CustomTokenAuthentication,)
 
