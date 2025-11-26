@@ -28,20 +28,8 @@ class User(models.Model):
         return True
 
 
-class Category(models.Model):
-    name = models.CharField(max_length=50, unique=True)
-    slug = models.SlugField(max_length=60, unique=True, blank=True)
-
-    class Meta:
-        verbose_name_plural = "categories"
-
-    def __str__(self):
-        return self.name
-
-
 class Items(models.Model):
     item_name = models.CharField(max_length=200)
-    item_category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="items")
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
     item_picture = models.ImageField(upload_to="items/%Y/%m/%d/", blank=True, null=True)
     slug = models.SlugField(unique=True, blank=True)
