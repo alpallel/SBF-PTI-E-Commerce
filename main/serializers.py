@@ -27,19 +27,19 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
-class CategorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Category
-        fields = ("id", "name", "slug")
+# class CategorySerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Category
+#         fields = ("id", "name", "slug")
 
 
 class ItemsSerializer(serializers.ModelSerializer):
     item_id = serializers.IntegerField(source='id', read_only=True)
-    item_category = serializers.CharField(required=False)
+    # item_category = serializers.CharField(required=False)
 
     class Meta:
         model = Items
-        fields = ("item_id", "item_name", "item_description", "item_picture", "item_category", "price", "created_at", "updated_at", "slug")
+        fields = ("item_id", "item_name", "item_description", "item_picture", "price", "created_at", "updated_at", "slug") # Missing optional "item_category"
         read_only_fields = ("created_at", "updated_at")
 
 
